@@ -385,11 +385,11 @@ class WSJMarketDiaryScraper:
             # Create output directory if it doesn't exist
             os.makedirs(output_dir, exist_ok=True)
 
-            # Generate timestamp for unique filename
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Generate date for filename (will overwrite if run multiple times same day)
+            date_str = datetime.now().strftime("%Y%m%d")
 
             # Save combined file with all tables
-            combined_filename = f"wsj_market_diary_{timestamp}.csv"
+            combined_filename = f"wsj_market_diary_{date_str}.csv"
             combined_filepath = os.path.join(output_dir, combined_filename)
 
             # Combine all tables with a separator row
