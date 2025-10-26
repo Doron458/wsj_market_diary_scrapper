@@ -189,6 +189,8 @@ class WSJMarketDiaryScraper:
                     text = cell.get_text(strip=True)
                     # Replace special characters if needed
                     text = text.replace('\n', ' ').replace('\r', ' ')
+                    # Remove commas from numbers
+                    text = self.clean_number_format(text)
                     row_data.append(text)
 
                 # Only add non-empty rows
@@ -216,6 +218,46 @@ class WSJMarketDiaryScraper:
             import traceback
             self.logger.error(traceback.format_exc())
             return None
+
+    def clean_number_format(self, text: str) -> str:
+        """
+        Remove commas from numbers to convert to regular number format.
+
+        Args:
+            text: String that may contain numbers with commas
+
+        Returns:
+            String with commas removed from numbers
+        """
+        # Remove commas from text (e.g., "1,234" -> "1234")
+        return text.replace(',', '')
+
+    def transpose_table(self, table_data: List[List[str]]) -> List[List[str]]:
+        """
+        Transpose table data (swap rows and columns).
+
+        Args:
+            table_data: List of rows (each row is a list of cells)
+
+        Returns:
+            Transposed table (rows become columns, columns become rows)
+        """
+        if not table_data or not table_data[0]:
+            return table_data
+
+        # Get the maximum number of columns
+        max_cols = max(len(row) for row in table_data)
+
+        # Ensure all rows have the same length
+        normalized_data = []
+        for row in table_data:
+            normalized_row = row + [''] * (max_cols - len(row))
+            normalized_data.append(normalized_row)
+
+        # Transpose: convert rows to columns
+        transposed = list(map(list, zip(*normalized_data)))
+
+        return transposed
             
     def scrape_market_diary(self) -> List[List[List[str]]]:
         """
@@ -295,11 +337,14 @@ class WSJMarketDiaryScraper:
             with open(combined_filepath, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile)
                 for i, table in enumerate(table_data):
+                    # Transpose the table (swap rows and columns)
+                    transposed_table = self.transpose_table(table)
+
                     if i > 0:
                         # Add separator row between tables
                         writer.writerow([])  # Empty row for separation
-                        writer.writerow(['---', f'Table {i+1}', '---'] + [''] * max(0, len(table[0]) - 3 if table else 0))
-                    writer.writerows(table)
+                        writer.writerow(['---', f'Table {i+1}', '---'] + [''] * max(0, len(transposed_table[0]) - 3 if transposed_table else 0))
+                    writer.writerows(transposed_table)
 
             self.logger.info(f"Saved combined data ({len(table_data)} tables) to: {combined_filepath}")
             return [combined_filepath]
