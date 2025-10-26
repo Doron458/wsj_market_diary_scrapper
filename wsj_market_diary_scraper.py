@@ -258,6 +258,65 @@ class WSJMarketDiaryScraper:
         transposed = list(map(list, zip(*normalized_data)))
 
         return transposed
+
+    def split_table_by_exchange(self, table_data: List[List[str]]) -> List[List[List[str]]]:
+        """
+        Split a table into multiple tables based on exchange names.
+
+        Args:
+            table_data: List of rows (each row is a list of cells)
+
+        Returns:
+            List of tables, where each table represents one exchange
+        """
+        if not table_data or len(table_data) < 1:
+            return [table_data]
+
+        # Common exchange names to look for
+        exchange_names = ['NYSE', 'NASDAQ', 'NYSE American', 'NYSE Arca', 'AMEX', 'OTC']
+
+        # First, transpose to work with the data
+        transposed = self.transpose_table(table_data)
+
+        if not transposed or len(transposed) < 1:
+            return [table_data]
+
+        # Find exchange name positions in the first row (header row)
+        header_row = transposed[0]
+        exchange_positions = []
+
+        for i, cell in enumerate(header_row):
+            if cell.strip() in exchange_names:
+                exchange_positions.append((i, cell.strip()))
+
+        # If no exchange names found, return original transposed table
+        if not exchange_positions:
+            return [transposed]
+
+        # Split the transposed table based on exchange positions
+        split_tables = []
+
+        for idx, (start_col, exchange_name) in enumerate(exchange_positions):
+            # Determine end column (next exchange start or end of table)
+            if idx + 1 < len(exchange_positions):
+                end_col = exchange_positions[idx + 1][0]
+            else:
+                end_col = len(header_row)
+
+            # Extract columns for this exchange
+            exchange_table = []
+            for row in transposed:
+                # Include the first column (row labels) plus exchange-specific columns
+                if start_col > 0:
+                    # First column is usually empty or contains row labels
+                    exchange_row = [row[0]] + row[start_col:end_col]
+                else:
+                    exchange_row = row[start_col:end_col]
+                exchange_table.append(exchange_row)
+
+            split_tables.append(exchange_table)
+
+        return split_tables
             
     def scrape_market_diary(self) -> List[List[List[str]]]:
         """
@@ -336,21 +395,41 @@ class WSJMarketDiaryScraper:
             # Combine all tables with a separator row
             with open(combined_filepath, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile)
+                table_counter = 0
+
                 for i, table in enumerate(table_data):
-                    # Transpose the table (swap rows and columns)
-                    transposed_table = self.transpose_table(table)
+                    # For the first table, try to split by exchange names
+                    if i == 0:
+                        split_tables = self.split_table_by_exchange(table)
 
-                    if i > 0:
-                        # Add separator row between tables
-                        writer.writerow([])  # Empty row for separation
-                        writer.writerow(['---', f'Table {i+1}', '---'] + [''] * max(0, len(transposed_table[0]) - 3 if transposed_table else 0))
-                    writer.writerows(transposed_table)
+                        # Write each split table
+                        for j, split_table in enumerate(split_tables):
+                            if table_counter > 0:
+                                # Add separator row between tables
+                                writer.writerow([])  # Empty row for separation
+                                # Try to get exchange name from first row if available
+                                exchange_name = split_table[0][1] if len(split_table) > 0 and len(split_table[0]) > 1 else f'Section {j+1}'
+                                writer.writerow(['---', f'{exchange_name}', '---'] + [''] * max(0, len(split_table[0]) - 3 if split_table else 0))
+                            writer.writerows(split_table)
+                            table_counter += 1
+                    else:
+                        # For other tables, just transpose
+                        transposed_table = self.transpose_table(table)
 
-            self.logger.info(f"Saved combined data ({len(table_data)} tables) to: {combined_filepath}")
+                        if table_counter > 0:
+                            # Add separator row between tables
+                            writer.writerow([])  # Empty row for separation
+                            writer.writerow(['---', f'Table {i+1}', '---'] + [''] * max(0, len(transposed_table[0]) - 3 if transposed_table else 0))
+                        writer.writerows(transposed_table)
+                        table_counter += 1
+
+            self.logger.info(f"Saved combined data ({table_counter} tables/sections) to: {combined_filepath}")
             return [combined_filepath]
 
         except Exception as e:
             self.logger.error(f"Error saving to CSV: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return []
             
     def close(self):
